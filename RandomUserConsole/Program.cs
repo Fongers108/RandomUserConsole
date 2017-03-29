@@ -19,6 +19,11 @@ namespace RandomUserConsole
         Added package Nito.AsyncEx
         Added package Newtonsoft.Json
 
+        Enabled Migrations
+
+        There are all sorts of additional small details not included in the code. For example, using try/catch for 
+        exception handling and better separation ofconcerns. I thought about adding the users to the DB directly from
+        the GetRandomUsers call but decided to separate that out in this case.
     */
 
     internal class Program
@@ -29,56 +34,49 @@ namespace RandomUserConsole
         }
 
         static async void MainAsync(string[] args)
-        {
-            List<RandomUser> randomUsers = new List<RandomUser>();
-
-            Console.WriteLine("Starting download of 5 users...");
-            randomUsers.AddRange(await GetRandomUser());
+        {   
+            // informt the user and start our work
+            Console.WriteLine("Starting download 5 users...");
+            DownloadAndAddUsers(await GetRandomUsers());
             Console.WriteLine("Finished download of 5 users...");
-
-            Console.WriteLine("Adding users to database...");
-            AddThemToTheDatabase(randomUsers);
-            Console.WriteLine("Finished adding users to database...");
-
+            
+            // prompt user to close the console
             Console.WriteLine("Hit Enter when done...");
             Console.ReadLine();
         }
 
-        static async Task<List<RandomUser>> GetRandomUser()
+        // The workhorse to download the users
+        static async Task<List<RandomUser>> GetRandomUsers()
         {
-            List<RandomUser> rando = new List<RandomUser>();
+            List<RandomUser> randomUsers = new List<RandomUser>();
 
-            try
+            using (var client = new HttpClient())
             {
-                using (var client = new HttpClient())
+                HttpResponseMessage response = await client.GetAsync("https://randomuser.me/api/?results=5&inc=name,email,phone,cell&noinfo");
+
+                response.EnsureSuccessStatusCode();
+                using (HttpContent content = response.Content)
                 {
-                    //var task = client.GetAsync("https://randomuser.me/api/?results=5&inc=name,email,phone,cell&noinfo")
-                    HttpResponseMessage response = await client.GetAsync("https://randomuser.me/api/?results=5&inc=name,email,phone,cell&noinfo");
+                    var jsonString = await response.Content.ReadAsStringAsync();
 
-                    response.EnsureSuccessStatusCode();
-                    using (HttpContent content = response.Content)
-                    {
-                        var jsonString = await response.Content.ReadAsStringAsync();
-
-                        RootObject root = (RootObject)JsonConvert.DeserializeObject(jsonString, typeof(RootObject));
-                        root.results.ForEach(x => rando.Add(
-                            new RandomUser()
-                            {
-                                FullName = string.Format("{0} {1} {2}", x.name.title, x.name.first, x.name.last),
-                                Email = x.Email,
-                                Phone = x.Phone,
-                                Cell = x.Cell
-                            }
-                            ));
-                    }
+                    RootObject root = (RootObject)JsonConvert.DeserializeObject(jsonString, typeof(RootObject));
+                    root.results.ForEach(x => randomUsers.Add(
+                        new RandomUser()
+                        {
+                            FullName = string.Format("{0} {1} {2}", x.name.title, x.name.first, x.name.last),
+                            Email = x.Email,
+                            Phone = x.Phone,
+                            Cell = x.Cell
+                        }
+                        ));
                 }
             }
-            catch (Exception ex) { }
 
-            return rando;
+            return randomUsers;
         }
 
-        private static void AddThemToTheDatabase(List<RandomUser> randoms)
+        // Add the list of users to the database.
+        private static void DownloadAndAddUsers(List<RandomUser> randoms)
         {
             using (RandomUserDbContext db = new RandomUserDbContext())
             {
